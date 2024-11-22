@@ -1,0 +1,293 @@
+---
+title: "Assignment 2 - MD Fardin"
+author: "MD Fardin"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+### MD Fardin
+
+### Data 710 - Basic Analytics
+
+### Professor Cohen
+
+### 11/08/2024
+
+#### Starting the session:
+
+```{r include=FALSE}
+# Start Session
+rm(list = ls())
+gc()
+
+# Setting the Working Directory
+setwd("D:/Graduate School Files/Data 710 -  Basic Analytics/Assignment 2")
+
+# Load Packages
+library(readxl)
+library(ggplot2)
+library(dplyr)
+library(sf)
+library(sp)
+library(tidyverse)
+library(descr) 
+library(leaflet)
+library(ggthemes)
+library(writexl) 
+```
+
+#### Data Wrangling:
+
+#### Data Wrangling for Demography Table:
+
+```{r include=FALSE}
+# Load the Data
+Demography <- read_xlsx("Demography Data 2021-23.xlsx") # Demography Data
+Weight <- read_xlsx("Weight Health Questionaire 2021-23.xlsx") # Weight Data
+
+names(Demography)
+```
+
+```{r include=FALSE}
+# I will only change the names for the columns that I need. 
+names(Demography)[c(4, 5, 8, 11, 12, 14, 15, 16)] <- paste(c("Gender", "Age", "Race", "US Army Duty", "Country of Birth", "Education Level", "Marital Status", "Pregnancy Status"))
+
+head(Demography)
+
+names(Demography)
+```
+
+```{r include=FALSE}
+# Not all variables are needed from the data, so I want a new table with the variables I need for this analysis
+Demography2 <- Demography[, c("SEQN", "Gender", "Age", "Race", "US Army Duty", "Country of Birth", "Education Level", "Pregnancy Status")]
+
+Demography2
+```
+
+```{r include=FALSE}
+# Recode Variables for Demography2
+Demography2$Gender <- ifelse(Demography2$Gender == 1, "Male", "Female")
+
+Demography2$Race <- factor(Demography2$Race,
+                           levels = c(1, 2, 3, 4, 6, 7),
+                           labels = c("Mexican American", "Other Hispanic", "Non-Hispanic White", "Non-Hispanic Black", "Non-Hispanic Asian", "Other Race - Including Multi-Racial"))
+
+Demography2$`US Army Duty` <- factor(Demography2$`US Army Duty`,
+                                     levels = c(1, 2, 7, "NA"),
+                                     labels = c("Yes", "No", "Refused", "Missing"))
+
+Demography2$`Country of Birth` <- factor(Demography2$`Country of Birth`,
+                                         levels = c(1, 2, "NA"),
+                                         labels = c("Born in 50 US states or Washington", "Others", "Missing"))
+
+Demography2$`Education Level` <- factor(Demography2$`Education Level`,
+                                        levels = c(1, 2, 3, 4, 5, 9, "NA"),
+                                        labels = c("Less than 9th grade", "9-11th grade", "High school graduate/GED or equivalent", "Some college or AA degree", "College graduate or above", "Don't know", "Missing"))
+
+Demography2$`Pregnancy Status` <- factor(Demography2$`Pregnancy Status`,
+                                         levels = c(1, 2, 3, "NA"),
+                                         labels = c("Yes", "Not Pregnant", "Doesn't Know", "Missing"))
+```
+
+#### Data Wrangling for Weight Table:
+
+```{r include=FALSE}
+names(Weight)
+```
+
+```{r include=FALSE}
+# Recode 
+names(Weight)[c(2, 3, 4, 5)] <- paste(c("Height (Inches)", "Weight (Pounds)", "Weight (Last year;Pounds)", "Tried Weight Loss"))
+
+head(Weight)
+
+names(Weight)
+```
+
+```{r include=FALSE}
+# Copy of data for data analysis for variable recode
+Weight2 <- Weight
+```
+
+```{r include=FALSE}
+# Recode Variables in the Weight2 table where I keep the numeric values as numbers while turning, "9999" and "7777" and "NA" to their string value:
+
+Weight2$`Height (Inches)`<- ifelse(
+  Weight2$`Height (Inches)` == 7777, "Refused",
+  ifelse(
+    Weight2$`Height (Inches)` == 9999, "Don't Know",
+    ifelse(is.na(Weight2$`Height (Inches)`), "Missing",
+           as.character(Weight2$`Height (Inches)`)
+    )
+  )
+)
+
+
+Weight2$`Weight (Pounds)`<- ifelse(
+  Weight2$`Weight (Pounds)` == 7777, "Refused",
+  ifelse(
+    Weight2$`Weight (Pounds)` == 9999, "Don't Know",
+    ifelse(is.na(Weight2$`Weight (Pounds)`), "Missing",
+           as.character(Weight2$`Weight (Pounds)`)
+    )
+  )
+)
+
+Weight2$`Weight (Last year;Pounds)`<- ifelse(
+  Weight2$`Weight (Last year;Pounds)` == 7777, "Refused",
+  ifelse(
+    Weight2$`Weight (Last year;Pounds)` == 9999, "Don't Know",
+    ifelse(is.na(Weight2$`Weight (Last year;Pounds)`), "Missing",
+           as.character(Weight2$`Weight (Last year;Pounds)`)
+    )
+  )
+)
+
+Weight2$`Tried Weight Loss` <- factor(Weight2$`Tried Weight Loss`,
+                                     levels = c(1, 2, 7, 9, "NA"),
+                                     labels = c("Yes", "No", "Refused", "Don't Know", "Missing"))
+```
+
+### Creating a new Variable to calculate BMI
+
+```{r include=FALSE}
+# Creating a BMI Variable
+
+Weight2 <- Weight2 %>%
+  # Filters rows with non-numeric values for height and weight
+  filter(!`Height (Inches)` %in% c("Refused", "Don't know", "Missing"),
+         !`Weight (Pounds)` %in% c("Refused", "Don't know", "Missing")) %>%
+  # Convert height and weight to numeric
+  mutate(
+    `Height (Inches)` = as.numeric(`Height (Inches)`),
+    `Weight (Pounds)` = as.numeric(`Weight (Pounds)`),
+    # Calculate BMI
+    BMI = ((`Weight (Pounds)`) / (`Height (Inches)` ^ 2) * 703)
+  )
+```
+
+#### BMI Categories Indicator [(According to the National Heart, Lung, and Blood Institute (nhlbi)](https://www.nhlbi.nih.gov/health/educational/lose_wt/BMI/bmicalc.htm):
+
+```{r include=FALSE}
+# Creating a BMI Indicator
+Weight2 <- Weight2 %>%
+  mutate(
+    `BMI Indicator` = case_when(
+      BMI < 18.5 ~ "Underweight",
+      BMI >= 18.5 & BMI < 25 ~ "Normal weight",
+      BMI >= 25 & BMI < 30 ~ "Overweight",
+      BMI >= 30 ~ "Obesity",
+      TRUE ~ NA_character_  # Handles any unexpected NA or non-numeric BMI values
+    )
+  )
+```
+
+### Merging the Data
+
+```{r include=FALSE}
+# I will merge both the wrangled tables into one:
+DATA <- merge(Demography2, Weight2, by = "SEQN", all.x = TRUE)
+head(DATA)
+```
+
+```{r include=FALSE}
+# Making a copy of my DATA table in case of issues. 
+DATA2 <- DATA
+```
+
+### More Wrangling:
+
+```{r include=FALSE}
+# Removing anyone under the age of 18
+DATA2 <- DATA2 %>%
+  filter(Age >= 18)
+
+# Removing any "NA" from "BMI Indicator" variable:
+DATA2 <- DATA2 %>%
+  filter(!is.na(`BMI Indicator`))
+
+# Removing any "Don't Know" and "Missing" from the "Education Level" Variable:
+DATA2 <- DATA2 %>%
+  filter(!`Education Level` %in% c("Don't Know", "Missing"))
+
+# Removing anyone who is Pregnant:
+DATA2 <- DATA2 %>%
+  filter(`Pregnancy Status` != "Yes")
+
+# Females who don't know if they're pregnant
+f_unknown_pregnancy <- DATA2 %>%
+  filter(Gender == "Female" & `Pregnancy Status` == "Doesn't Know") %>%
+  nrow()
+
+f_unknown_pregnancy
+
+# Out of curiosity, how many men selected "Doesn't Know" for the Pregnancy question
+m_idk_pregnancy <- DATA2 %>%
+  filter(Gender == "Male" & `Pregnancy Status` == "Doesn't Know") %>%
+  nrow()
+
+m_idk_pregnancy
+```
+
+### Analyze the Data:
+
+```{r include=FALSE}
+# The number of people in this sample
+nrow(DATA2)
+
+# BMI indicator count
+freq(DATA2$`BMI Indicator`)
+
+# Education Level
+freq(DATA2$`Education Level`)
+
+# BMI statistics
+summary(DATA2$BMI)
+
+# Weight Statistics
+summary(DATA2$`Weight (Pounds)`)
+
+# BMI Indicator by Education Level
+BMI_Education <- table(DATA2$`Education Level`, DATA2$`BMI Indicator`)
+
+#BMI Indicator by Education Level proportion
+proptable_bmiedu <- prop.table(BMI_Education)
+```
+
+```{r include=FALSE}
+# A bar graph for the BMI Indication
+ggplot(DATA2, aes(x = `Education Level`, fill = `BMI Indicator`)) +
+  geom_bar(position = "dodge") +
+  labs(
+    title = "BMI Indicator by Education Level",
+    x = "Education Level",
+    y = "# of People",
+    fill = "BMI Indicator"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r include=FALSE}
+# Correlation Between Education Level and BMI
+kruskal_bmi <- kruskal.test(BMI ~ `Education Level`, data = DATA2)
+kruskal_bmi
+```
+
+```{r include=FALSE}
+# How many people in the sample tried weight loss
+freq(DATA2$`Tried Weight Loss`)
+
+# How many people in each indicator tried weight loss
+table(DATA2$`BMI Indicator`, DATA2$`Tried Weight Loss`)
+
+# Proportion of the sample that tried weight loss
+prop.table(table(DATA2$`BMI Indicator`, DATA2$`Tried Weight Loss`))
+```
+
+#### Saving my table as an Excel file:
+
+```{r include=FALSE}
+# Saving DATA2 in my working directory 
+write_xlsx(DATA2, path = "DATA2.xlsx")
+```
